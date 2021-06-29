@@ -372,22 +372,19 @@ Se calcula el promedio de tiempo en stock de un producto como los dias del mes d
 CREATE VIEW [ALTA_DATA].[pc_promedio_tiempo_en_stock]
 AS
     SELECT 
-        p.[id_pc]
+        v.[id_pc]
+        ,v.[id_sucursal]
         ,FORMAT(t.[fecha], 'MM-yyyy') as Periodo
         ,DAY(EOMONTH(t.[fecha])) / SUM(v.[ven_cantidad]) as 'Promedio de tiempo en stock'
     FROM 
-        [ALTA_DATA].[BI_PC] p
-        ,[ALTA_DATA].[BI_Venta] v
-        ,[ALTA_DATA].[BI_Compra] c
+        [ALTA_DATA].[BI_Venta] v
         ,[ALTA_DATA].[BI_Tiempo] t 
     WHERE
-        p.[id_pc] = v.[id_pc] 
-        AND p.[id_pc] = c.[id_pc]
-        AND t.[cod_fecha] = v.[cod_fecha] 
-        AND t.[cod_fecha] = c.[cod_fecha]
-        AND p.[id_pc] IS NOT NULL -- Los accesorios tiene id_pc en NULL
+        t.[cod_fecha] = v.[cod_fecha] 
+        AND v.[id_pc] IS NOT NULL -- Los accesorios tiene id_pc en NULL
     GROUP BY 
-        p.[id_pc]
+        v.[id_pc]
+        ,v.[id_sucursal]
         ,t.[fecha]
 
 GO
@@ -468,6 +465,7 @@ CREATE VIEW [ALTA_DATA].[acc_promedio_tiempo_en_stock]
 AS
 		SELECT 
             v.[id_accesorio]
+            ,v.[id_sucursal]
             ,FORMAT(t.[fecha], 'MM-yyyy') as Periodo
             ,DAY(EOMONTH(t.[fecha])) / SUM(v.[ven_cantidad]) as 'Promedio de tiempo en stock'
         FROM
@@ -479,6 +477,7 @@ AS
 		GROUP BY 
             v.[id_accesorio]
             ,t.[fecha]
+            ,v.[id_sucursal]
 
 GO
 
