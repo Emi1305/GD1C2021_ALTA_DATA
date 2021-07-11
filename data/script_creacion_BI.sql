@@ -71,14 +71,6 @@ BEGIN
       [suc_telefono] DECIMAL
 	);
 
--- Clientes
-
-	CREATE TABLE [ALTA_DATA].[BI_Cliente] (
-	[id_cliente] INTEGER PRIMARY KEY,
-    [cli_fecha_nacimiento] DATETIME2,
-    [cli_sexo] CHAR NULL
-	);
-
 -- Tiempo
 
 	CREATE TABLE [ALTA_DATA].[BI_Tiempo] (
@@ -90,7 +82,6 @@ BEGIN
 
 	CREATE TABLE [ALTA_DATA].[BI_Compra] (
 	 [id_compra] INTEGER IDENTITY(1,1) PRIMARY KEY,
-     [com_fecha] DATETIME2,
      [com_precio] DECIMAL,
      [com_cantidad] DECIMAL,
      [cod_fecha] INTEGER FOREIGN KEY REFERENCES [ALTA_DATA].[BI_Tiempo](cod_fecha),
@@ -103,25 +94,44 @@ BEGIN
 
 	CREATE TABLE [ALTA_DATA].[BI_Venta] (
 	[id_venta] INTEGER IDENTITY(1,1) PRIMARY KEY,
-	[ven_fecha] DATETIME2,
 	[ven_precio] DECIMAL,
 	[ven_cantidad] DECIMAL,
     [cod_fecha] INTEGER FOREIGN KEY REFERENCES [ALTA_DATA].[BI_Tiempo](cod_fecha),
     [id_pc] NVARCHAR(50) FOREIGN KEY REFERENCES [ALTA_DATA].[BI_PC](id_pc),
     [id_accesorio] DECIMAL FOREIGN KEY REFERENCES [ALTA_DATA].[BI_Accesorio](id_accesorio),
     [id_sucursal] INTEGER FOREIGN KEY REFERENCES [ALTA_DATA].[BI_Sucursal](id_sucursal),
-	[id_cliente] INTEGER FOREIGN KEY REFERENCES [ALTA_DATA].[BI_Cliente](id_cliente)
+	[cliente_edad] NVARCHAR(50),
+	[cliente_sexo] CHAR(1)
 	);
 
 
 END;
+GO
+
+-- Funciones auxiliares
+CREATE FUNCTION [ALTA_DATA].[rango_edad]
+(
+	@FechaDeNacimiento DATETIME2
+)
+RETURNS NVARCHAR(50)
+AS
+BEGIN
+	RETURN CASE
+    	WHEN DATEDIFF(year, @FechaDeNacimiento, GETDATE()) BETWEEN 18 AND 30 THEN '18 - 30' 
+        WHEN DATEDIFF(year, @FechaDeNacimiento, GETDATE()) BETWEEN 31 AND 50 THEN '31 - 50'
+        WHEN DATEDIFF(year, @FechaDeNacimiento, GETDATE()) > 51 THEN '+51'
+        ELSE 'Otro'
+    END
+END;
+GO
+
+
 
 -- MIGRACION DE DATOS
 
 -- Componentes de PC
 
 -- Memoria Ram
-GO
 BEGIN
 	BEGIN
 		INSERT INTO [ALTA_DATA].[BI_Memoria_Ram](
@@ -264,20 +274,6 @@ BEGIN
 		FROM [ALTA_DATA].[Sucursal] m
 	END;
 
--- Cliente
-	BEGIN
-		INSERT INTO [ALTA_DATA].[BI_Cliente](
-            [id_cliente]
-			,[cli_fecha_nacimiento]
-	        ,[cli_sexo]
-			)
-		SELECT DISTINCT
-            m.[id_cliente]
-			,m.[cli_fecha_nacimiento]
-            ,m.[cli_sexo]
-		FROM [ALTA_DATA].[Cliente] m
-	END;
-
 -- Tiempo
 /*
 Como no hay codigos de fecha dejamos que se genere un id automaticamente
@@ -300,8 +296,7 @@ Como no hay codigos de compra, dejamos que se genere un id automaticamente
 */
 	BEGIN
 		INSERT INTO [ALTA_DATA].[BI_Compra](
-			 [com_fecha]
-			,[com_precio]
+			[com_precio]
 			,[com_cantidad]
 			,[id_pc]
 			,[id_accesorio]
@@ -309,9 +304,8 @@ Como no hay codigos de compra, dejamos que se genere un id automaticamente
             ,[cod_fecha]
 			)
 		SELECT DISTINCT
-		    m.[com_fecha]
-		   ,i.[itemc_precio]
-		   ,i.[itemc_cantidad]
+		   AVG(i.[itemc_precio])
+		   ,SUM(i.[itemc_cantidad])
 		   ,i.[id_pc]
 		   ,i.[id_accesorio]
 		   ,m.[id_sucursal]
@@ -323,38 +317,57 @@ Como no hay codigos de compra, dejamos que se genere un id automaticamente
         WHERE 
             i.[id_compra] = m.[id_compra]
             AND t.[fecha] = EOMONTH(m.[com_fecha])
+        GROUP BY
+            i.[id_pc]
+            ,i.[id_accesorio]
+            ,m.[id_sucursal]
+            ,t.[cod_fecha]
 	END;
 
 -- Ventas
+
+
+
 /*
 Como no hay codigo de ventas dejamos que se genere un id automaticamente
 */
 	BEGIN
 		INSERT INTO [ALTA_DATA].[BI_Venta](
-			 [ven_fecha]
-			,[id_pc]
+			[id_pc]
             ,[id_accesorio]
             ,[id_sucursal]
-            ,[id_cliente]
             ,[cod_fecha]
             ,[ven_cantidad]
             ,[ven_precio]
+            ,[cliente_sexo]
+            ,[cliente_edad]
 			)
 		SELECT DISTINCT
-			 m.[fac_fecha]
-		    ,i.[id_pc]
+		    i.[id_pc]
+            ,i.[id_accesorio]
+            ,m.[id_sucursal]
+            ,t.[cod_fecha]
+            ,SUM(i.[itemf_cantidad])
+            ,AVG(i.[itemf_precio])
+            ,c.[cli_sexo]
+            ,[ALTA_DATA].[rango_edad](c.[cli_fecha_nacimiento])
+            	
+		FROM [ALTA_DATA].[Factura] m
+            ,[ALTA_DATA].[Item_factura] i
+            ,[ALTA_DATA].[BI_Tiempo] t
+            ,[ALTA_DATA].[Cliente] c
+        WHERE
+            i.[id_factura] = m.[id_factura]
+            AND t.[fecha] = EOMONTH(m.[fac_fecha])
+            AND c.[id_cliente] = m.[id_cliente]
+        GROUP BY
+            i.[id_pc]
             ,i.[id_accesorio]
             ,m.[id_sucursal]
             ,m.[id_cliente]
             ,t.[cod_fecha]
-            ,i.[itemf_cantidad]
-            ,i.[itemf_precio]
-		FROM [ALTA_DATA].[Factura] m
-            ,[ALTA_DATA].[Item_factura] i
-            ,[ALTA_DATA].[BI_Tiempo] t
-        WHERE
-            i.[id_factura] = m.[id_factura]
-            AND t.[fecha] = EOMONTH(m.[fac_fecha])
+            ,c.[cli_sexo]
+            ,[ALTA_DATA].[rango_edad](c.[cli_fecha_nacimiento])
 	END;
 
 END;
@@ -382,11 +395,10 @@ AS
     WHERE
         t.[cod_fecha] = v.[cod_fecha] 
         AND v.[id_pc] IS NOT NULL -- Los accesorios tiene id_pc en NULL
-    GROUP BY 
-        v.[id_pc]
-        ,v.[id_sucursal]
-        ,t.[fecha]
-
+	GROUP BY 
+			v.[id_pc]
+            ,v.[id_sucursal]
+            ,t.[fecha]
 GO
 
 
@@ -405,7 +417,7 @@ AS
         v.[id_pc] = c.[id_pc]
         AND v.[id_pc] IS NOT NULL
     GROUP BY 
-        v.[id_pc]
+    	v.[id_pc]
 GO
 
 -- 3) Cantidad de PCs, vendidos y comprados x sucursal y mes
@@ -427,31 +439,36 @@ AS
         AND v.[id_sucursal] = c.[id_sucursal]
 		AND t.[cod_fecha] = c.[cod_fecha]
 		and t.[cod_fecha] = v.[cod_fecha]
-    GROUP BY 
-        v.[id_sucursal]
-        ,t.[fecha]
-        ,v.[id_pc]
+	GROUP BY 
+		v.[id_sucursal]
+		,v.[id_pc]
+		,FORMAT(t.[fecha], 'MM-yyyy')
 GO
 
 -- 4) Ganancias (precio de venta – precio de compra) x Sucursal x mes
 
 CREATE VIEW [ALTA_DATA].[pc_ganancias]
 AS 
-    SELECT 
-        v.[id_sucursal]
+    SELECT
+    	v.[id_pc]
+        ,v.[id_sucursal]
         ,FORMAT(t.[fecha], 'MM-yyyy') as Periodo
-        ,SUM(v.[ven_cantidad] * v.[ven_precio]) - sum(c.[com_cantidad] * c.com_precio) as ganancias
+        ,SUM(v.[ven_precio]*v.[ven_cantidad]) - SUM(c.[com_precio]*c.[com_cantidad]) as ganancias
     FROM 
         [ALTA_DATA].[BI_Compra] c 
         ,[ALTA_DATA].[BI_Venta] v
         ,[ALTA_DATA].[BI_Tiempo] t
     WHERE 
         v.[id_pc] = c.[id_pc]
+        AND v.[id_sucursal] = c.[id_sucursal]
         AND v.[cod_fecha] = c.[cod_fecha]
         AND v.[cod_fecha] = t.[cod_fecha]
+        AND v.[id_accesorio] IS NULL
+        AND c.[id_accesorio] IS NULL
     GROUP BY 
-        v.[id_sucursal],
-        t.[fecha]
+       	v.[id_pc]
+        ,v.[id_sucursal]
+        ,FORMAT(t.[fecha], 'MM-yyyy')
 GO
 
 
@@ -474,10 +491,10 @@ AS
         WHERE 
             t.[cod_fecha] = v.[cod_fecha] 
             AND v.[id_accesorio] IS NOT NULL
-		GROUP BY 
-            v.[id_accesorio]
-            ,t.[fecha]
+        GROUP BY 
+	         v.[id_accesorio]
             ,v.[id_sucursal]
+            ,t.[fecha]
 
 GO
 
@@ -496,8 +513,8 @@ AS
     WHERE
         v.[id_accesorio] = c.[id_accesorio]
         AND v.[id_accesorio] IS NOT NULL
-    GROUP BY 
-        v.[id_accesorio]
+    GROUP BY
+    	v.[id_accesorio]
 
 GO
 -- 7) Cantidad de accesorios, vendidos y comprados x sucursal y mes
@@ -519,30 +536,36 @@ AS
         AND v.[id_sucursal] = c.[id_sucursal]
 		AND t.[cod_fecha] = c.[cod_fecha]
 		and t.[cod_fecha] = v.[cod_fecha]
-    GROUP BY 
-        v.[id_sucursal]
-        ,t.[fecha]
-        ,v.[id_accesorio]
+	GROUP BY 
+		v.[id_sucursal]
+		,v.[id_accesorio]
+		,FORMAT(t.[fecha], 'MM-yyyy')
 GO
 
 -- 8) Ganancias (precio de venta – precio de compra) x Sucursal x mes
 CREATE VIEW [ALTA_DATA].[acc_ganancias]
 AS 
-    SELECT 
-        v.[id_sucursal]
+    SELECT
+    	v.[id_accesorio]
+        ,v.[id_sucursal]
         ,FORMAT(t.[fecha], 'MM-yyyy') as Periodo
-        ,SUM(v.[ven_cantidad] * v.[ven_precio]) - sum(c.[com_cantidad] * c.com_precio) as ganancias
+        ,SUM(v.[ven_precio]*v.[ven_cantidad]) - SUM(c.[com_precio]*c.[com_cantidad]) as ganancias
     FROM 
         [ALTA_DATA].[BI_Compra] c 
         ,[ALTA_DATA].[BI_Venta] v
         ,[ALTA_DATA].[BI_Tiempo] t
     WHERE 
         v.[id_accesorio] = c.[id_accesorio]
+        AND v.[id_sucursal] = c.[id_sucursal]
         AND v.[cod_fecha] = c.[cod_fecha]
         AND v.[cod_fecha] = t.[cod_fecha]
-    GROUP BY 
-        v.[id_sucursal],
-        t.[fecha]
+        AND v.[id_pc] IS NULL
+        AND c.[id_pc] IS NULL
+    GROUP BY
+    	v.[id_accesorio]
+    	,v.[id_sucursal]
+		,FORMAT(t.[fecha], 'MM-yyyy')
+
 GO
 
 -- BORRAR TODO: NO DESCOMENTAR
@@ -555,7 +578,6 @@ DROP TABLE [ALTA_DATA].[BI_Compra];
 DROP TABLE [ALTA_DATA].[BI_Venta];
 DROP TABLE [ALTA_DATA].[BI_Tiempo];
 DROP TABLE [ALTA_DATA].[BI_Sucursal];
-DROP TABLE [ALTA_DATA].[BI_Cliente];
 DROP TABLE [ALTA_DATA].[BI_PC];
 DROP TABLE [ALTA_DATA].[BI_Accesorio];
 DROP TABLE [ALTA_DATA].[BI_Memoria_Ram];
@@ -571,6 +593,7 @@ DROP VIEW [ALTA_DATA].[acc_promedio_tiempo_en_stock];
 DROP VIEW [ALTA_DATA].[acc_precio_promedio_compra_venta];
 DROP VIEW [ALTA_DATA].[acc_cantidad_compra_venta];
 DROP VIEW [ALTA_DATA].[acc_ganancias];
+DROP FUNCTION [ALTA_DATA].[rango_edad];
 END
 DROP SCHEMA [ALTA_DATA];
 */
